@@ -1,0 +1,18 @@
+# RobotOps AI —— Phase 1 运行依赖
+# 已在 Windows 11 + Python 3.12 + VS Code 环境验证通过
+# Phase 2（DeepSeek Agent）无需新增第三方依赖：HTTP 使用标准库 urllib，
+# .env 使用内置解析器（若安装了 python-dotenv 会自动优先使用）。
+pandas>=2.2.0
+numpy>=1.26.0
+openpyxl>=3.1.0
+
+# Phase 3：RAG 知识库（向量数据库）
+# chromadb 会自带 onnxruntime 等依赖；本项目使用自定义本地 Embedding，
+# 不会下载任何预训练模型。
+chromadb>=1.0.0
+
+# Phase 4：多 Agent 工作流（LangGraph 编排）
+langgraph>=1.0.0
+
+# Phase 5：可视化界面（Streamlit）
+streamlit>=1.57.0

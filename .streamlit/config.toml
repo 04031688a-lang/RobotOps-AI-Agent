@@ -1,0 +1,18 @@
+# RobotOps AI —— Phase 5 Streamlit 配置（企业后台风格：浅色、低饱和、无花哨样式）
+
+[theme]
+base = "light"
+primaryColor = "#1F4E79"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#1F2937"
+
+[server]
+# 上传文件大小上限（MB），运营数据文件通常不大
+maxUploadSize = 50
+headless = true
+
+[browser]
+# 关闭使用统计上报，便于企业内网部署
+gatherUsageStats = false
+
