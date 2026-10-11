@@ -273,7 +273,9 @@ atexit.register(purge_temp_chroma_dirs)  # 进程退出时句柄已释放，可�
 def make_temp_dir(prefix: str = "robotops_test_") -> Path:
     """在 output/ 下创建临时目录（已被 .gitignore 忽略）。"""
 
-    purge_temp_chroma_dirs(min_age_seconds=300.0, prefix=prefix)
+    # 清理本套测试遗留的临时目录：统一按 robotops_test_ 前缀回收，
+    # 避免某个用例用了自定义前缀后目录一直堆在 output/ 里。
+    purge_temp_chroma_dirs(min_age_seconds=300.0, prefix="robotops_test_")
     return Path(tempfile.mkdtemp(prefix=prefix, dir=PROJECT_ROOT / "output"))
 
 

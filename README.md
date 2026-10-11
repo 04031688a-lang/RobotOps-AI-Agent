@@ -325,8 +325,57 @@ Top-K 聚合（默认 5），最多注入提示词 6 个案例
 
 - **问题编号格式**：`ISSUE-YYYYMM-NNN`（如 `ISSUE-202609-001`）
 - **持久化**：SQLite（WAL 模式），默认 `data/issues.db`，可通过环境变量 `ROBOTOPS_ISSUES_DB` 覆盖路径。
+- **不保存任何密钥**：密钥统一放在 `.env`，问题库只存业务字段。
 
-### 9.2 整改效果验证（无需 LLM）
+### 9.2 数据模型与 E-R 图
+
+运营问题库使用 SQLite 标准库实现，共 3 张表。`metrics / diagnosis / cases / recommendations / verification` 等结构化字段以 JSON 文本存储，便于随业务演进而无需频繁变更表结构。
+
+```text
+┌───────────────────────────── issues（问题主表）─────────────────────────────┐
+│ PK  issue_id        TEXT   问题编号 ISSUE-YYYYMM-NNN                         │
+│     project         TEXT   所属项目（NOT NULL）                              │
+│     title           TEXT   问题标题（NOT NULL）                              │
+│     anomaly_type    TEXT   异常类型：故障率偏高/满意度偏低/运行率偏低/节降率偏低│
+│     priority        TEXT   优先级：高/中/低                                  │
+│     owner           TEXT   负责人（默认空）                                  │
+│     status          TEXT   状态：待处理/处理中/待验证/已完成/已关闭           │
+│     created_at      TEXT   创建时间                                          │
+│     updated_at      TEXT   更新时间                                          │
+│     closed_at       TEXT   关闭时间（默认空）                                │
+│     metrics         JSON   异常指标清单（actual_value / unit / condition）   │
+│     current_data    JSON   创建时的当前数据快照                              │
+│     diagnosis       JSON   诊断结论（source / summary / possible_reasons）   │
+│     cases           JSON   命中的历史案例（case_id / title / similarity）    │
+│     recommendations JSON   整改建议清单                                      │
+│     resolution      TEXT   整改结果描述                                      │
+│     verification    JSON   整改效果验证结果（changes / conclusion / improved）│
+│     source_file     TEXT   来源数据文件名                                    │
+└───────────────────────────────┬─────────────────────────────────────────────┘
+                                │ 1
+                                │
+                                │ N
+┌─────────────────────────── issue_notes（备注/处理记录）──────────────────────┐
+│ PK  id         INTEGER  自增主键                                             │
+│ FK  issue_id   TEXT     外键 → issues.issue_id（ON DELETE CASCADE）          │
+│     created_at TEXT     记录时间                                             │
+│     author     TEXT     操作人（默认空）                                     │
+│     kind       TEXT     类型：备注/状态变更/处理结果/整改验证                │
+│     text       TEXT     记录内容                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── meta（元信息）────────────────┐
+│ PK  key    TEXT   键（如 schema_version）      │
+│     value  TEXT   值                            │
+└────────────────────────────────────────────────┘
+
+索引：
+  idx_issues_status  ON issues(status)     -- 按状态筛选列表
+  idx_issues_project ON issues(project)    -- 按项目筛选
+  idx_notes_issue    ON issue_notes(issue_id)  -- 按问题查备注
+```
+
+### 9.3 整改效果验证（无需 LLM）
 
 1. 用户重新上传整改后的数据 → Phase 1 算出新指标；
 2. `compute_metric_change` 按 `|改后 - 改前| / |改前|` 计算改善幅度；
@@ -734,24 +783,26 @@ python -m pytest tests/ -k "anomaly or cleaner"
 
 ## 附录：截图说明
 
-> 当前环境未自动截图。建议运行 `streamlit run frontend/app.py` 后，按下表在浏览器中截图，保存到 `docs/images/` 目录，再取消对应注释。
+运行 `streamlit run frontend/app.py` 后，在浏览器中截图保存到 `docs/images/` 目录。已有的截图会在下方直接展示，其余为待补充占位。
 
-| # | 截图位置 | 建议文件名 |
-| --- | --- | --- |
-| 1 | 首页 / 分析工作台初始页 | `docs/images/01_home.png` |
-| 2 | 数据质量检查结果（清洗问题清单） | `docs/images/02_data_quality.png` |
-| 3 | 运营指标（6 项核心指标 + 项目汇总） | `docs/images/03_metrics.png` |
-| 4 | 异常项目清单（含严重程度） | `docs/images/04_anomalies.png` |
-| 5 | RAG 历史案例检索结果 | `docs/images/05_rag_cases.png` |
-| 6 | AI 分析（诊断 + 建议 + 分析依据） | `docs/images/06_ai_analysis.png` |
-| 7 | 运营问题列表 | `docs/images/07_issues_list.png` |
-| 8 | 整改验证（改善幅度计算与状态流转） | `docs/images/08_verification.png` |
+**① 首页 / 分析工作台**
+![首页 · 分析工作台](docs/images/01_home.png)
 
-<!--
-在 README 中插入截图的示例（取消注释并替换文件名）：
-
-![首页](docs/images/01_home.png)
+**② 数据质量检查**
 ![数据质量检查](docs/images/02_data_quality.png)
+
+| # | 截图位置 | 文件名 | 状态 |
+| --- | --- | --- | --- |
+| 1 | 首页 / 分析工作台初始页 | `docs/images/01_home.png` | ✅ 已补充 |
+| 2 | 数据质量检查结果（清洗问题清单） | `docs/images/02_data_quality.png` | ✅ 已补充 |
+| 3 | 运营指标（6 项核心指标 + 项目汇总） | `docs/images/03_metrics.png` | ⬜ 待补充 |
+| 4 | 异常项目清单（含严重程度） | `docs/images/04_anomalies.png` | ⬜ 待补充 |
+| 5 | RAG 历史案例检索结果 | `docs/images/05_rag_cases.png` | ⬜ 待补充 |
+| 6 | AI 分析（诊断 + 建议 + 分析依据） | `docs/images/06_ai_analysis.png` | ⬜ 待补充 |
+| 7 | 运营问题列表 | `docs/images/07_issues_list.png` | ⬜ 待补充 |
+| 8 | 整改验证（改善幅度计算与状态流转） | `docs/images/08_verification.png` | ⬜ 待补充 |
+
+<!-- 待补充截图插入位置：
 ![运营指标](docs/images/03_metrics.png)
 ![异常项目](docs/images/04_anomalies.png)
 ![RAG 案例](docs/images/05_rag_cases.png)

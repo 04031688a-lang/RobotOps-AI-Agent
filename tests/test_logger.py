@@ -99,7 +99,7 @@ class PipelineLoggingTests(unittest.TestCase):
     """pipeline 接入点应产出需求要求的业务事件。"""
 
     def setUp(self) -> None:
-        self.temp_dir = make_temp_dir(prefix="robotops_test_pipelinelog_")
+        self.temp_dir = make_temp_dir(prefix="robotops_test_logger_")
         self.log_file = self.temp_dir / "robotops.log"
         unified_logger.setup_logger(log_file=self.log_file)
 
