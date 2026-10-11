@@ -76,6 +76,7 @@ def load_operation_data(
     sheet_name: str | int | None = None,
     encoding: str | None = None,
     validate: bool = True,
+    allow_empty: bool = False,
 ) -> LoadResult:
     """读取机器人运营数据文件。
 
@@ -84,6 +85,9 @@ def load_operation_data(
         sheet_name: Excel 工作表名称或索引，默认读取第一个工作表。
         encoding: CSV 编码，默认自动尝试常见编码。
         validate: 是否校验必需列。
+        allow_empty: 是否允许「只有表头、没有记录」的空数据文件。
+            默认 False（直接报错）；数据质量检查流程会传入 True，
+            由质量报告统一给出「数据表为空」的结论。
 
     Returns:
         ``LoadResult``，其中 ``data`` 为原始 DataFrame（仅规范了表头）。
@@ -105,7 +109,7 @@ def load_operation_data(
         frame, used_sheet = _read_excel(resolved, sheet_name=sheet_name)
         used_encoding = None
 
-    if frame.empty:
+    if frame.empty and not allow_empty:
         raise DataLoadError(f"数据文件没有可读取的记录：{resolved}")
 
     frame, renamed = normalize_headers(frame)

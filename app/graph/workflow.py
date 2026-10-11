@@ -28,12 +28,11 @@ except ImportError as error:  # pragma: no cover
     ) from error
 
 from robotops import config as project_config
-from robotops.llm.client import ChatResult, DeepSeekClient
+from robotops.llm.client import DeepSeekClient
 from robotops.llm.config import LLMConfig
 from robotops.llm.logger import setup_llm_logger
 from robotops.rag import KnowledgeBaseRetriever, RagConfig
 
-from ..agents.base import has_llm_failure
 from ..agents.data_analysis import DataAnalysisAgent
 from ..agents.diagnosis import DiagnosisAgent
 from ..agents.rag_agent import RagAgent

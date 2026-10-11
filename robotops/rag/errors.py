@@ -18,13 +18,6 @@ class RagError(RobotOpsError):
         super().__init__(message)
         self.hint = hint or self.default_hint
 
-    def describe(self) -> str:
-        text = str(self)
-        if self.hint:
-            text = f"{text}\n排查建议：{self.hint}"
-        return text
-
-
 class RagDependencyError(RagError):
     """缺少 RAG 依赖（ChromaDB 未安装）。"""
 

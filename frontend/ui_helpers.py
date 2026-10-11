@@ -12,14 +12,15 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import pandas as pd
 
 from robotops import config as project_config
 from robotops.data_loader import load_operation_data
-from robotops.exceptions import RobotOpsError
+from robotops.exceptions import RobotOpsError, describe_error as describe_error_text
 from robotops.llm.config import LLMConfig
+from robotops.logger import log_event
 from robotops.metrics import metric_definitions_frame
 from robotops.models import COLUMN_SPECS
 
@@ -107,6 +108,11 @@ def save_uploaded_file(file_name: str, data: bytes, *, upload_dir: Path | None =
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = target_dir / f"{stamp}_{safe_name}"
     path.write_bytes(data)
+    log_event(
+        "Data uploaded: %s (%s bytes)",
+        safe_name,
+        len(data),
+    )
     return path
 
 
@@ -513,16 +519,15 @@ def run_analysis_workflow(
 
 
 def describe_error(error: Exception) -> str:
-    """把异常转换为用户可读的一行提示（不暴露 traceback）。"""
+    """把异常转换为用户可读的一行提示（不暴露 traceback）。
 
-    describe = getattr(error, "describe", None)
-    text = str(describe()) if callable(describe) else str(error)
-    return " ".join(text.split())
+    复用 robotops.exceptions.describe_error（one_line=True），
+    保证前端、命令行与工作流使用同一套错误文案。
+    """
+
+    return describe_error_text(error, one_line=True)
 
 
-# ---------------------------------------------------------------------------
-# 内部工具
-# ---------------------------------------------------------------------------
 def _dtype_label(column: pd.Series) -> str:
     if pd.api.types.is_datetime64_any_dtype(column):
         return "日期"

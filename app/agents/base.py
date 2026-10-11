@@ -167,6 +167,28 @@ class BaseAgent(ABC):
 # ---------------------------------------------------------------------------
 # 工具函数
 # ---------------------------------------------------------------------------
+def normalize_text_list(value: Any, *, limit: int = 5) -> list[str]:
+    """把模型返回的字符串 / 数组字段规范化为去重后的字符串列表。
+
+    用于 evidence（分析依据）这类「一组依据」字段：
+    接受字符串或数组，忽略空值，按出现顺序去重，最多保留 limit 条。
+    """
+
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if not isinstance(value, (list, tuple)):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text and text not in items:
+            items.append(text)
+    return items[:limit]
+
+
 def extract_json_object(text: str) -> dict[str, Any] | None:
     """从模型返回中提取 JSON 对象（容忍代码块与前后说明文字）。"""
 

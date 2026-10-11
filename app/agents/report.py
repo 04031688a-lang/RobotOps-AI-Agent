@@ -17,6 +17,7 @@ from robotops.llm.errors import LLMError
 from ..graph.prompts import PROMPT_VERSION, REPORT_SYSTEM_PROMPT, build_report_prompt
 from ..graph.state import WorkflowState
 from .base import BaseAgent, has_llm_failure
+from .diagnosis import build_findings
 
 
 class ReportAgent(BaseAgent):
@@ -44,6 +45,8 @@ class ReportAgent(BaseAgent):
                 recommendations=state.get("recommendations") or {},
                 thresholds=state.get("thresholds") or {},
                 workflow_notes=notes,
+                trend_analysis=state.get("trend_analysis") or {},
+                project_comparison=state.get("project_comparison") or {},
             )
             try:
                 content, result = self.chat_text(REPORT_SYSTEM_PROMPT, prompt)
@@ -137,6 +140,8 @@ class ReportAgent(BaseAgent):
 
         lines.append("## 二、关键指标")
         lines.append("")
+        lines.append("> 以下数值由 Phase 1 的 Pandas 模块计算，属于程序计算结果，不是模型推测。")
+        lines.append("")
         lines.append("| 指标 | 数值 | 单位 |")
         lines.append("| --- | --- | --- |")
         for name, value in metrics.items():
@@ -170,36 +175,69 @@ class ReportAgent(BaseAgent):
                 )
         lines.append("")
 
-        lines.append("## 四、可能原因（推测）")
+        lines.append("### 分析依据（程序计算）")
+        lines.append("")
+        findings = diagnosis.get("findings") or build_findings(state)
+        if not findings:
+            lines.append("本次运行未生成分析依据。")
+        else:
+            for index, item in enumerate(findings, start=1):
+                lines.append(
+                    f"{index}. **{item.get('finding', '')}**（依据来源：{item.get('basis', '-')}）"
+                )
+                for fact in item.get("evidence") or []:
+                    lines.append(f"   - {fact}")
+        lines.append("")
+
+        lines.append("## 四、可能原因（AI 推测，非事实）")
         lines.append("")
         reasons = diagnosis.get("possible_reasons") or []
         if not state.get("has_anomalies"):
             lines.append("本期无异常，不需要原因推测。")
+            lines.append("")
         elif not reasons:
             lines.append("当前数据不足以判断，且未获得可用的诊断结论。")
+            lines.append("")
         else:
             lines.append(f"诊断来源：{diagnosis.get('source', '-')}；以下内容均为**推测**，需补充数据后确认。")
             lines.append("")
             for index, item in enumerate(reasons, start=1):
-                lines.append(f"{index}. **{item.get('reason', '')}**（置信度：{item.get('confidence', '-')}）")
+                lines.append(
+                    f"{index}. **可能原因（推测）：{_strip_inference_prefix(item.get('reason', ''))}**"
+                    f"（置信度：{item.get('confidence', '-')}）"
+                )
+                for fact in item.get("evidence") or []:
+                    lines.append(f"   - 分析依据（程序计算）：{fact}")
                 if item.get("based_on"):
                     lines.append(f"   - 判断依据：{item['based_on']}")
                 lines.append(f"   - 缺失数据：{item.get('data_gap') or '当前数据不足以判断'}")
+            lines.append("")
+            lines.append("> 以上可能原因均为 AI 推测，不代表已确认的事实。")
             lines.append("")
 
         lines.append("## 五、历史相似案例（仅供参考）")
         lines.append("")
         if not cases:
-            lines.append("未检索到足够相关的历史案例（知识库中无相似案例或相似度低于阈值）。")
+            retrieval = state.get("retrieval") or {}
+            lines.append(
+                str(
+                    retrieval.get("message")
+                    or "当前知识库未找到高相关历史案例，本次分析主要依据当前运营数据。"
+                )
+            )
         else:
             lines.append("以下案例为**模拟案例（虚构内容）**，仅作参考，不代表当前项目数据。")
             lines.append("")
             for index, case in enumerate(cases, start=1):
                 lines.append(
                     f"{index}. **[{case.get('case_id')}] {case.get('title')}**"
-                    f"｜类型：{case.get('case_type')}｜相关度：{case.get('similarity')}"
+                    f"｜类别：{case.get('category', '-')}"
+                    f"｜相似度：{case.get('similarity_score', case.get('similarity'))}"
                     f"｜来源文件：{case.get('source_file')}"
                 )
+                if case.get("content"):
+                    excerpt = str(case["content"]).replace("\n", " ")
+                    lines.append(f"   - 案例内容：{excerpt[:200]}")
                 if case.get("matched_sections"):
                     lines.append(f"   - 命中片段：{'、'.join(case['matched_sections'])}")
             lines.append("")
@@ -209,8 +247,10 @@ class ReportAgent(BaseAgent):
         items = recommendations.get("items") or []
         if not state.get("has_anomalies"):
             lines.append("本期无异常，暂不需要针对性优化建议，建议保持现有运维节奏。")
+            lines.append("")
         elif not items:
             lines.append("当前数据不足以判断，未生成可执行建议。")
+            lines.append("")
         else:
             lines.append(f"建议来源：{recommendations.get('source', '-')}。")
             lines.append("")
@@ -222,11 +262,39 @@ class ReportAgent(BaseAgent):
                     lines.append(f"   - 预期效果：{item['expected_effect']}")
                 if item.get("verification"):
                     lines.append(f"   - 验证方式：{item['verification']}")
+                for fact in item.get("evidence") or []:
+                    lines.append(f"   - 分析依据（程序计算）：{fact}")
                 if item.get("reference_case") and item["reference_case"] != "无":
                     lines.append(f"   - 参考案例：{item['reference_case']}")
             lines.append("")
 
-        lines.append("## 七、数据与口径说明")
+        lines.append("## 七、运营趋势与项目对比（程序计算）")
+        lines.append("")
+        trend = state.get("trend_analysis") or {}
+        comparison = state.get("project_comparison") or {}
+        if not trend:
+            lines.append("本次运行未提供趋势数据。")
+        else:
+            lines.append(
+                f"趋势粒度：{trend.get('granularity_label', '-')}；"
+                f"周期数：{trend.get('period_count', '-')}；"
+                f"窗口：{(trend.get('window') or {}).get('start', '-')} ~ "
+                f"{(trend.get('window') or {}).get('end', '-')}。"
+            )
+            lines.append("")
+            for item in trend.get("highlights") or []:
+                lines.append(f"- {item}")
+        if comparison:
+            lines.append("")
+            lines.append("项目横向对比（程序计算）：")
+            lines.append("")
+            for item in comparison.get("highlights") or []:
+                lines.append(f"- {item}")
+        for warning in (trend.get("warnings") or []):
+            lines.append(f"- 趋势说明：{warning}")
+        lines.append("")
+
+        lines.append("## 八、数据与口径说明")
         lines.append("")
         lines.append(f"- 异常判定阈值：{summary.get('阈值', {})}")
         lines.append(f"- 故障率判定粒度：{summary.get('故障率判定粒度', '-')}")
@@ -252,6 +320,17 @@ class ReportAgent(BaseAgent):
             )
         lines.append("")
         return "\n".join(lines)
+
+
+def _strip_inference_prefix(text: Any) -> str:
+    """去掉原因文本里已有的「推测 / 可能原因」前缀，避免报告里重复标注。"""
+
+    cleaned = str(text or "").strip()
+    for prefix in ("可能原因（推测）：", "可能原因（推测）:", "可能原因：", "推测：", "推测:"):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+    return cleaned or str(text or "").strip()
 
 
 def workflow_notes(state: WorkflowState) -> list[str]:

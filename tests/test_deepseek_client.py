@@ -20,7 +20,6 @@ from robotops.llm.errors import (  # noqa: E402
     LLMEmptyResponseError,
     LLMInsufficientBalanceError,
     LLMNetworkError,
-    LLMRateLimitError,
     LLMRequestError,
     LLMResponseFormatError,
     LLMServerError,

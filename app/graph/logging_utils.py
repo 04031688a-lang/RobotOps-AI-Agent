@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from robotops import config as project_config
+from robotops.logger import log_event
 
 LOGGER_NAME = "robotops.workflow"
 LOG_FILE_NAME = "workflow.log"
@@ -45,6 +46,7 @@ class WorkflowLogger:
         self.messages.append(message)
         if self.verbose and self.echo:
             print(message)
+        log_event("%s", message)  # Phase 11：同步写入统一日志
         self._write_file(message)
 
     def agent_started(self, tag: str) -> None:

@@ -15,7 +15,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 from frontend import issues_helpers as ih  # noqa: E402
 from robotops.issues import IssueService, IssueStatus, IssueStore  # noqa: E402
 from tests._helpers import cleanup_dir, make_temp_dir  # noqa: E402
-from tests.test_issues import build_state, with_after_metrics  # noqa: E402
+from tests.test_issues import build_state  # noqa: E402
 
 ISSUES_VIEW = str(Path(__file__).resolve().parents[1] / "frontend" / "views" / "issues.py")
 #: 真实入口（单入口 + 侧边栏模块切换）

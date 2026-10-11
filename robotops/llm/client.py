@@ -202,6 +202,14 @@ class DeepSeekClient:
         attempts_allowed = self.config.max_retries + 1
         last_error: LLMError | None = None
 
+        from ..logger import log_event, log_error  # 局部导入，避免模块环
+
+        log_event(
+            "DeepSeek API call started: model=%s, messages=%s",
+            self.config.model,
+            len(messages),
+        )
+
         self._logger.debug(
             "DeepSeek 配置：model=%s base_url=%s timeout=%ss retries=%s api_key=%s",
             self.config.model,
@@ -223,6 +231,12 @@ class DeepSeekClient:
             )
             try:
                 result = self._request_once(payload, attempt=attempt, started=started)
+                log_event(
+                    "DeepSeek API call completed: model=%s, attempt=%s, elapsed=%.2fs",
+                    self.config.model,
+                    attempt,
+                    time.perf_counter() - started,
+                )
                 return result
             except (LLMTimeoutError, LLMNetworkError, LLMRateLimitError, LLMServerError) as error:
                 last_error = error
@@ -246,9 +260,15 @@ class DeepSeekClient:
             except LLMError as error:
                 # 不可重试的错误（密钥、参数、余额、解析等）直接抛出
                 self._logger.error("调用失败（不重试）：%s", error)
+                log_error("DeepSeek API call failed: %s", error)
                 raise
 
         assert last_error is not None  # 循环结束时必然有错误
+        log_error(
+            "DeepSeek API call failed after %s attempts: %s",
+            attempts_allowed,
+            last_error,
+        )
         raise last_error
 
     # -- 内部实现 ---------------------------------------------------------

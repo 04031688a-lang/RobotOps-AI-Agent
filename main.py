@@ -33,11 +33,12 @@ from robotops.agent.robot_ops_agent import (
     RobotOpsAnalysisAgent,
 )
 from robotops.console_io import setup_console_encoding
-from robotops.exceptions import RobotOpsError
+from robotops.exceptions import describe_error, RobotOpsError
 from robotops.llm.config import LLMConfig, describe_supported_env
 from robotops.llm.config import ENV_LOG_LEVEL
 from robotops.llm.errors import LLMError, MissingAPIKeyError
 from robotops.llm.env_loader import get_env
+from robotops.logger import log_exception
 from robotops.pipeline import run_analysis
 from robotops.rag import (
     KnowledgeBaseRetriever,
@@ -386,6 +387,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return EXIT_OK
     except MissingAPIKeyError as exc:
+        log_exception(exc, context="main")
         print(f"[配置错误] {exc.describe()}", file=sys.stderr)
         print(
             "提示：可以先执行 `python main.py --dry-run` 查看将发送给模型的结构化数据（无需 API Key）。",
@@ -393,12 +395,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_INPUT_ERROR
     except LLMError as exc:
+        log_exception(exc, context="main")
         print(f"[AI 调用失败] {exc.describe()}", file=sys.stderr)
         return EXIT_LLM_ERROR
     except RobotOpsError as exc:
-        print(f"[执行失败] {exc}", file=sys.stderr)
+        log_exception(exc, context="main")
+        print(f"[执行失败] {describe_error(exc)}", file=sys.stderr)
         return EXIT_INPUT_ERROR
     except PermissionError as exc:
+        log_exception(exc, context="main")
         print(
             f"[执行失败] 文件被占用或无写入权限：{exc}\n"
             f"提示：请先关闭正在打开该文件的 Excel 窗口后重试。",

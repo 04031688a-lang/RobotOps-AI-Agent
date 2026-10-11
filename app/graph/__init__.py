@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from .logging_utils import WorkflowLogger
-from .prompts import PROMPT_VERSION
 from .state import (
     REQUIRED_STATE_KEYS,
     WORKFLOW_VERSION,

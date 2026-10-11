@@ -15,7 +15,6 @@ from app.agents.rag_agent import RagAgent
 from app.graph.logging_utils import WorkflowLogger
 from app.graph.state import (
     REQUIRED_STATE_KEYS,
-    create_initial_state,
     missing_required_keys,
     serializable_state,
 )

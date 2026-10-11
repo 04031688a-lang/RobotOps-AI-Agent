@@ -10,7 +10,6 @@ CSV 统一使用 ``utf-8-sig`` 编码，保证 Windows 下双击用 Excel 打开
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -107,9 +106,35 @@ def export_results(
     *,
     write_excel: bool = True,
 ) -> list[Path]:
-    """导出分析结果文件，返回已生成的文件路径列表。"""
+    """导出分析结果文件，返回已生成的文件路径列表。
+
+    Raises:
+        ReportGenerationError: 输出目录不可写或文件被占用（例如 Excel 正在打开报告）。
+    """
+
+    from .exceptions import ReportGenerationError
+    from .logger import log_error, log_exception
 
     target_dir = Path(output_dir) if output_dir is not None else config.OUTPUT_DIR
+    try:
+        return _export_results(result, target_dir, write_excel=write_excel)
+    except OSError as error:
+        log_exception(error, context="export_results")
+        raise ReportGenerationError(f"报告文件生成失败：{error}") from error
+    except Exception as error:  # noqa: BLE001 - pandas/openpyxl 写入异常也统一转友好提示
+        log_exception(error, context="export_results")
+        log_error("Report generation failed: %s", error)
+        raise ReportGenerationError(f"报告生成失败：{error}") from error
+
+
+def _export_results(
+    result: "AnalysisResult",
+    target_dir: Path,
+    *,
+    write_excel: bool = True,
+) -> list[Path]:
+    """导出实现（异常由 ``export_results`` 统一包装）。"""
+
     target_dir.mkdir(parents=True, exist_ok=True)
     basename = config.REPORT_BASENAME
     written: list[Path] = []

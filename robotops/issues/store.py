@@ -75,6 +75,12 @@ class IssueStore:
             self._create_schema()
         except sqlite3.Error as error:  # pragma: no cover - 依赖文件系统状态
             raise IssueStorageError(f"打开问题数据库失败：{self.path}（{error}）") from error
+        except OSError as error:
+            # 目录不可创建（路径被占用、无写权限等）同样给出统一友好提示，
+            # 不把 FileExistsError/PermissionError 之类的底层异常抛给用户
+            raise IssueStorageError(
+                f"问题数据库目录不可用：{self.path.parent}（{error}）"
+            ) from error
 
     # -- 生命周期 ---------------------------------------------------------
     def close(self) -> None:

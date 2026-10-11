@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import re
 from typing import Any, Iterable, Sequence
 

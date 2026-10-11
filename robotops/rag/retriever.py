@@ -16,8 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
+from ..logger import log_event
 from ..pipeline import AnalysisResult
-from .config import DOMAIN_TERMS, RagConfig
+from .config import DOMAIN_TERMS, NO_RELEVANT_CASE_MESSAGE, RagConfig
 from .document_loader import CaseChunk, CaseDocument, build_chunks, load_case_documents
 from .query_builder import AnomalyQuery, DEFAULT_MAX_QUERIES, build_anomaly_queries
 from .vector_store import IndexStatus, KnowledgeVectorStore, RetrievedChunk
@@ -71,19 +72,52 @@ class RetrievedCase:
     excerpt: str = ""
     sections: dict[str, str] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
+    def content_text(self, *, budget: int = 700) -> str:
+        """案例正文（问题 / 现象 / 可能原因 / 处理措施 / 处理结果 拼接）。
+
+        用于「RAG 来源追踪」：引用案例时必须能回溯到具体内容，而不是只有标题。
+        """
+
+        parts = [self.title] if self.title else []
+        for name, body in self.sections.items():
+            if body:
+                parts.append(f"【{name}】{body}")
+        if not parts and self.excerpt:
+            parts.append(self.excerpt)
+        text = "\n".join(parts)
+        if budget and len(text) > budget:
+            text = text[:budget].rstrip() + "…（已截断）"
+        return text
+
+    def source_info(self) -> dict[str, Any]:
+        """来源追踪信息（需求要求的 6 个字段）。"""
+
         return {
+            "case_id": self.case_id,
+            "title": self.title,
+            "category": self.category,
+            "similarity_score": round(float(self.similarity), 4),
+            "source_file": self.source_file,
+            "content": self.content_text(),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = {
             "case_id": self.case_id,
             "title": self.title,
             "case_type": self.case_type,
             "category": self.category,
             "similarity": round(self.similarity, 4),
+            # 与 similarity 同值，保留两套命名：similarity 用于历史兼容，similarity_score 用于来源追踪
+            "similarity_score": round(float(self.similarity), 4),
             "matched_sections": self.matched_sections,
             "matched_queries": self.matched_queries,
             "keywords": self.keywords,
             "source_file": self.source_file,
             "data_nature": self.data_nature,
+            "content": self.content_text(),
         }
+        return payload
 
     def summary_text(self, *, budget: int = 700) -> str:
         lines = [
@@ -142,6 +176,7 @@ class RetrievalResult:
             "top_k": self.top_k,
             "is_relevant": self.is_relevant,
             "reason": self.reason,
+            "message": "" if self.cases else NO_RELEVANT_CASE_MESSAGE,
             "notes": self.notes,
             "cases": [case.to_dict() for case in self.cases],
         }
@@ -325,11 +360,18 @@ class KnowledgeBaseRetriever:
         )[:limit_cases]
 
         if not result.cases:
+            # reason：给排查用的详细信息；message：给用户看的统一结论
             result.reason = (
                 "未检索到足够相关的历史案例"
                 f"（最低相似度阈值 {threshold:g}；"
                 f"可调低 ROBOTOPS_RAG_MIN_SIMILARITY 或补充知识库文档后重试）"
             )
+        log_event(
+            "RAG retrieved %s cases (queries=%s, min_similarity=%s)",
+            len(result.cases),
+            len(queries),
+            threshold,
+        )
         return result
 
     def retrieve_for_result(

@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from robotops.agent.payload import build_analysis_payload
+from robotops.comparison import compare_projects
 from robotops.metrics import metric_definitions_frame
 from robotops.pipeline import run_analysis
+from robotops.trends import build_trend_series
 
 from ..graph.state import WorkflowState, thresholds_from_state
 from .base import BaseAgent
@@ -34,6 +36,10 @@ class DataAnalysisAgent(BaseAgent):
             verbose=False,
         )
         payload = build_analysis_payload(result)
+
+        # Phase 9：趋势与项目对比（全部由程序计算，供 Agent 解释，不在 Agent 内重算）
+        trend = build_trend_series(result.cleaned_data)
+        comparison = compare_projects(result.cleaned_data)
 
         return {
             "analysis_result": result,
@@ -59,6 +65,8 @@ class DataAnalysisAgent(BaseAgent):
             "anomaly_summary": payload["anomaly_summary"],
             "abnormal_robots": payload["abnormal_robots"],
             "data_quality": payload["data_quality"],
+            "trend_analysis": trend.summary_dict(),
+            "project_comparison": comparison.summary_dict(),
             "anomaly_count": result.anomaly_count,
             "has_anomalies": result.anomaly_count > 0,
         }

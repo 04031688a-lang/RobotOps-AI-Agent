@@ -14,7 +14,6 @@ import pandas as pd  # noqa: E402
 from robotops import config  # noqa: E402
 from robotops.data_cleaner import clean_operation_data  # noqa: E402
 from robotops.metrics import calculate_core_metrics, project_level_summary  # noqa: E402
-from tests._helpers import base_operation_frame  # noqa: E402
 
 
 def metrics_frame() -> pd.DataFrame:

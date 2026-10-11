@@ -14,13 +14,21 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:  # 保证可以从项目根目录导入 robotops / app / frontend
-    sys.path.insert(0, str(PROJECT_ROOT))
+# views/analysis.py 位于 frontend/views/ 下，项目根目录是上两级
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# 把项目根目录置于 sys.path 最前面：否则 frontend/ 会抢先解析 "import app"（Phase 4 工作流包），
+# 造成页面脚本被重复执行（表现为 key='view_switcher' 重复）。
+_PROJECT_ROOT_TEXT = str(PROJECT_ROOT)
+while _PROJECT_ROOT_TEXT in sys.path:
+    sys.path.remove(_PROJECT_ROOT_TEXT)
+sys.path.insert(0, _PROJECT_ROOT_TEXT)
 
 import pandas as pd
 import streamlit as st
 
+from frontend import evidence_helpers as uie
+from frontend import quality_helpers as uiq
+from frontend import trend_helpers as uit
 from frontend import ui_helpers as ui
 from robotops import config as project_config
 from robotops.exceptions import RobotOpsError
@@ -34,6 +42,11 @@ def parse_upload(file_bytes: bytes, file_name: str) -> dict:
 
     path = ui.save_uploaded_file(file_name, file_bytes)
     preview = ui.preview_uploaded_file(path)
+    quality = (
+        None
+        if preview.error_message
+        else uiq.check_quality(preview.frame, frame_name=file_name)
+    )
     return {
         "path": str(preview.path),
         "frame": preview.frame,
@@ -43,6 +56,7 @@ def parse_upload(file_bytes: bytes, file_name: str) -> dict:
         "error_message": preview.error_message,
         "row_count": preview.row_count,
         "column_count": preview.column_count,
+        "quality": quality,
     }
 
 
@@ -112,6 +126,16 @@ with st.sidebar:
             key="threshold_saving_rate",
         )
 
+        st.caption("Phase 8 指标体系阈值（用于指标级异常判定）")
+        utilization_lower = st.number_input(
+            "设备利用率下限（%）",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(project_config.DEFAULT_INDICATOR_THRESHOLDS.utilization_lower),
+            step=1.0,
+            key="threshold_utilization",
+        )
+
     st.divider()
     st.caption(f"API Key：{masked_key if has_api_key else '未配置'}")
     st.caption(f"运行模式：{'AI 分析' if use_ai else '离线模板'} · {'含历史案例' if use_rag else '不含历史案例'}")
@@ -126,6 +150,14 @@ thresholds = project_config.AnomalyThresholds(
     fault_rate_upper=fault_rate_upper,
     satisfaction_lower=satisfaction_lower,
     uptime_rate_lower=uptime_rate_lower,
+    saving_rate_lower=saving_rate_lower,
+)
+
+# Phase 8：指标级判定阈值（与 Phase 1 记录级阈值并列，互不影响）
+indicator_thresholds = project_config.IndicatorThresholds(
+    fault_rate_upper=fault_rate_upper,
+    satisfaction_lower=satisfaction_lower,
+    utilization_lower=utilization_lower,
     saving_rate_lower=saving_rate_lower,
 )
 
@@ -200,10 +232,47 @@ if upload_info and not upload_info["error_message"]:
             st.dataframe(ui.required_columns_frame(), hide_index=True)
 
 # ---------------------------------------------------------------------------
+# 数据质量检查（Phase 8）
+# ---------------------------------------------------------------------------
+quality_report = (upload_info or {}).get("quality")
+quality_panel = uiq.quality_panel_data(quality_report)
+
+if upload_info and not upload_info["error_message"]:
+    st.subheader("数据质量检查")
+    st.caption(
+        "上传文件先经过字段检查 → 数据类型检查 → 缺失值检查 → 重复数据检查 → "
+        "异常值检查，产出数据质量报告；通过后才会进入数据分析。"
+    )
+
+    st.markdown("\n".join("- " + line for line in quality_panel["lines"]))
+    if quality_panel["status_line"]:
+        st.caption(quality_panel["status_line"])
+
+    renderers = {"success": st.success, "warning": st.warning, "error": st.error}
+    render = renderers.get(quality_panel["block_level"])
+    if render is not None:
+        render(quality_panel["headline"])
+
+    with st.expander("数据质量检查明细（共 " + str(len(quality_panel["checks"])) + " 项）"):
+        st.dataframe(quality_panel["checks"], hide_index=True)
+        st.caption(
+            "检查口径见 robotops/quality.py，阈值集中在 robotops/config.py 的 QualityThresholds。"
+        )
+
+    if not quality_panel["can_analyze"]:
+        st.error(quality_panel["block_message"], icon=":material/block:")
+
+# ---------------------------------------------------------------------------
 # 二、开始分析
 # ---------------------------------------------------------------------------
 st.subheader("二、开始分析")
-data_ready = bool(data_path) and bool(upload_info) and not upload_info["missing_columns"]
+quality_ok = bool(quality_panel["available"]) and bool(quality_panel["can_analyze"])
+data_ready = (
+    bool(data_path)
+    and bool(upload_info)
+    and not upload_info["missing_columns"]
+    and quality_ok
+)
 ai_blocked = use_ai and not has_api_key
 
 if ai_blocked:
@@ -220,6 +289,9 @@ analyze_clicked = st.button(
     disabled=not data_ready or ai_blocked,
     help="点击后调用 Phase 4 的多 Agent 工作流（分析 → 诊断 → RAG → 建议 → 报告）",
 )
+
+if quality_panel["available"] and not quality_panel["can_analyze"]:
+    st.caption("「开始分析」已禁用：数据存在严重质量问题，请先按上方提示修复后重新上传。")
 
 if analyze_clicked and data_ready:
     with st.spinner("正在运行多 Agent 工作流，请稍候…"):
@@ -304,6 +376,126 @@ if analysis_state:
                 )
             else:
                 st.metric(card["label"], card["value"], border=True, help=card["help"])
+
+    # ---------------- Phase 8：运营指标体系 ----------------
+    indicator_panel = uiq.indicator_panel_data(cleaned_data, thresholds=indicator_thresholds)
+    if indicator_panel["available"]:
+        st.subheader("运营指标体系（Phase 8）")
+        st.caption(
+            "九项指标全部由 Python / Pandas 计算，大模型不参与数值计算。"
+            + indicator_panel["headline"]
+        )
+        st.dataframe(indicator_panel["metrics"], hide_index=True)
+
+        if indicator_panel["anomaly_count"] or indicator_panel["warning_count"]:
+            st.warning(
+                "指标级判定：异常 "
+                + str(indicator_panel["anomaly_count"])
+                + " 项 / 预警 "
+                + str(indicator_panel["warning_count"])
+                + " 项（阈值来自 config.IndicatorThresholds）。",
+                icon=":material/rule:",
+            )
+
+        with st.expander("指标级异常 / 预警明细"):
+            if indicator_panel["anomalies"].empty:
+                st.info("按当前阈值未发现指标级异常或预警。")
+            else:
+                st.dataframe(indicator_panel["anomalies"], hide_index=True)
+
+        with st.expander("项目维度指标"):
+            st.dataframe(indicator_panel["project_table"], hide_index=True)
+
+        with st.expander("阈值配置（集中定义在 robotops/config.py）"):
+            st.dataframe(indicator_panel["thresholds_table"], hide_index=True)
+
+    # ---------------- Phase 9：运营趋势与项目对比 ----------------
+    st.subheader("运营趋势与项目对比（Phase 9）")
+    st.caption(
+        "趋势与环比 / 同期 / 连续升降、项目横向对比全部由 Python / Pandas 计算，"
+        "大模型只负责解释，不参与数值计算。"
+    )
+    trend_choice = st.radio(
+        "趋势粒度",
+        [label for label, _ in uit.GRANULARITY_OPTIONS],
+        index=0,
+        horizontal=True,
+        key="trend_granularity",
+        help="「自动」会按数据跨度选择日 / 周 / 月：跨度 < 21 天用日，>= 21 天用周，>= 90 天用月",
+    )
+    trend_panel = uit.trend_panel_data(
+        cleaned_data, granularity=uit.granularity_choice(trend_choice)
+    )
+    st.caption(trend_panel["headline"])
+
+    if not trend_panel["available"]:
+        st.info(
+            "当前数据不足，无法生成趋势："
+            + "；".join(trend_panel["warnings"] or ["缺少可用日期或周期数据"])
+        )
+    else:
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**故障率趋势**")
+            st.line_chart(
+                trend_panel["charts"]["fault_rate"], x="期间", y="数值", height=260
+            )
+        with right:
+            st.markdown("**满意度趋势**")
+            st.line_chart(
+                trend_panel["charts"]["satisfaction"], x="期间", y="数值", height=260
+            )
+
+        st.markdown("**运营成本趋势**")
+        st.bar_chart(trend_panel["charts"]["total_cost"], x="期间", y="数值", height=260)
+
+        with st.expander("其他指标趋势（运行率 / 利用率 / 节降率 / MTTR）"):
+            extra_options = [item for item in trend_panel["metric_options"] if item["key"] not in uit.REQUIRED_TREND_METRICS]
+            extra_labels = [item["label"] for item in extra_options]
+            extra_label = st.selectbox("选择指标", extra_labels, key="trend_extra_metric")
+            extra_key = next(
+                (item["key"] for item in extra_options if item["label"] == extra_label),
+                None,
+            )
+            if extra_key:
+                st.line_chart(
+                    trend_panel["charts"][extra_key], x="期间", y="数值", height=260
+                )
+
+        st.markdown("**趋势变化（环比 / 同期 / 连续上升下降）**")
+        st.dataframe(trend_panel["change_frame"], hide_index=True)
+        for warning in trend_panel["warnings"]:
+            st.caption("⚠ " + warning)
+
+        st.markdown("**项目指标对比**")
+        label_by_key = {item["key"]: item["label"] for item in trend_panel["metric_options"]}
+        comparison_labels = [item["label"] for item in trend_panel["metric_options"]]
+        default_labels = [label_by_key[key] for key in uit.DEFAULT_COMPARISON_METRICS if key in label_by_key]
+        selected_labels = st.multiselect(
+            "选择对比指标",
+            comparison_labels,
+            default=default_labels,
+            key="comparison_metrics",
+        )
+        selected_keys = [key for key, label in label_by_key.items() if label in selected_labels]
+        comparison_panel = uit.comparison_panel_data(cleaned_data, metric_keys=selected_keys)
+        st.caption(comparison_panel["headline"])
+        if comparison_panel["available"] and not comparison_panel["chart"].empty:
+            st.bar_chart(comparison_panel["chart"], height=300)
+            st.dataframe(comparison_panel["frame"], hide_index=True)
+            with st.expander("单指标排名（1 = 最优）"):
+                rank_label = st.selectbox(
+                    "选择指标", comparison_labels, key="comparison_rank_metric"
+                )
+                rank_key = next(
+                    (key for key, label in label_by_key.items() if label == rank_label), None
+                )
+                if rank_key:
+                    st.dataframe(
+                        uit.ranking_table(cleaned_data, rank_key), hide_index=True
+                    )
+        for warning in comparison_panel["warnings"]:
+            st.caption("⚠ " + warning)
 
     # ---------------- 四、异常项目 ----------------
     st.subheader("四、异常项目")
@@ -451,6 +643,8 @@ if analysis_state:
                 hide_index=True,
             )
             st.caption(f"共 {len(cases)} 个历史案例，{ui.CASE_DISCLAIMER}。")
+            with st.expander("案例来源与内容（可追溯）"):
+                st.dataframe(uie.case_source_frame(analysis_state), hide_index=True)
 
     with tabs[4]:
         items = recommendations.get("items") or []
@@ -474,11 +668,81 @@ if analysis_state:
                     if item.get("reference_case") and item["reference_case"] != "无":
                         st.markdown(f"参考案例：{item['reference_case']}")
 
+    # ---------------- Phase 10：分析依据 ----------------
+    evidence_panel = uie.evidence_panel_data(analysis_state)
+    st.subheader("分析依据")
+    st.caption(
+        "按来源分区展示，互不混写：程序计算的数值与判定、RAG 历史案例、"
+        + evidence_panel["inference_label"]
+        + "、AI 运营建议。"
+    )
+    col_current, col_case, col_reason = st.columns(3)
+
+    with col_current:
+        st.markdown("**当前数据 / 程序计算结果**")
+        for line in evidence_panel["current"]:
+            st.markdown("- " + line)
+        for line in evidence_panel["program"]:
+            st.markdown("- " + line)
+        if evidence_panel["trend"]:
+            st.markdown("**趋势（程序计算）**")
+            for line in evidence_panel["trend"][:3]:
+                st.markdown("- " + line)
+        if evidence_panel["comparison"]:
+            st.markdown("**项目对比（程序计算）**")
+            for line in evidence_panel["comparison"][:3]:
+                st.markdown("- " + line)
+
+    with col_case:
+        st.markdown("**历史案例（RAG）**")
+        if evidence_panel["cases"]:
+            st.dataframe(evidence_panel["cases_frame"], hide_index=True)
+            st.caption(evidence_panel["case_disclaimer"])
+        else:
+            st.info(evidence_panel["case_message"])
+
+    with col_reason:
+        st.markdown("**" + evidence_panel["inference_label"] + "**")
+        if evidence_panel["possible_reasons"]:
+            st.dataframe(evidence_panel["reasons_frame"], hide_index=True)
+            st.caption(evidence_panel["disclaimer"])
+        else:
+            st.info("本次未产出可能原因（无异常或诊断阶段未执行）。")
+
+    if evidence_panel["recommendation_rows"]:
+        with st.expander("AI 运营建议（含分析依据）"):
+            st.dataframe(evidence_panel["recommendations_frame"], hide_index=True)
+            st.caption("以上建议均为 AI 输出，请结合实际核查后执行。")
+
+    with st.expander("分析依据明细（结论 + evidence）"):
+        findings = evidence_panel["findings"]
+        if not findings:
+            st.info("本次运行未生成分析依据明细。")
+        else:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "结论": item.get("finding"),
+                            "依据来源": item.get("basis"),
+                            "evidence": "；".join(item.get("evidence") or []),
+                        }
+                        for item in findings
+                    ]
+                ),
+                hide_index=True,
+            )
+
     # ---------------- 六、RAG 历史参考案例 ----------------
     st.subheader("六、RAG 历史参考案例")
     case_cards = ui.case_cards(analysis_state)
     if not case_cards:
-        st.info("未检索到足够相关的历史案例（本次未参考知识库案例）。")
+        st.info(
+            str(
+                (analysis_state.get("retrieval") or {}).get("message")
+                or "当前知识库未找到高相关历史案例，本次分析主要依据当前运营数据。"
+            )
+        )
     else:
         st.caption(f"共 {len(case_cards)} 个案例，全部为{ui.CASE_DISCLAIMER}。")
         for card in case_cards:
@@ -559,6 +823,6 @@ if analysis_state:
 
 st.divider()
 st.caption(
-    "RobotOps AI · Phase 5 可视化界面：本页仅负责操作、上传、展示与调用已有工作流，"
-    "指标与异常均由程序计算，AI 结论仅供参考。"
+    "RobotOps AI · Phase 5 可视化界面 + Phase 8 数据质量检查与运营指标体系：本页仅负责操作、上传、"
+    "展示与调用已有工作流，指标与异常均由程序计算，AI 结论仅供参考。"
 )

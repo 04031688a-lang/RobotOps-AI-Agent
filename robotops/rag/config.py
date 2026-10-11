@@ -53,6 +53,11 @@ DEFAULT_AUTO_BUILD = True
 #: 单个案例注入提示词的最大字符数
 CASE_TEXT_BUDGET = 700
 
+#: 所有案例都低于相似度阈值时对外展示的统一提示（前端 / 报告 / Agent 共用）
+NO_RELEVANT_CASE_MESSAGE = (
+    "当前知识库未找到高相关历史案例，本次分析主要依据当前运营数据。"
+)
+
 #: 判断“问题是否与机器人运营相关”的领域词表（无关问题直接判定为无相关案例）
 DOMAIN_TERMS: tuple[str, ...] = (
     "故障",

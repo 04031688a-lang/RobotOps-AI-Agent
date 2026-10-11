@@ -22,9 +22,10 @@ from app.graph.state import serializable_state, state_overview
 from app.graph.workflow import RobotOpsWorkflow, export_workflow_outputs
 from robotops import config as project_config
 from robotops.console_io import setup_console_encoding
-from robotops.exceptions import RobotOpsError
+from robotops.exceptions import describe_error, RobotOpsError
 from robotops.llm.config import LLMConfig
 from robotops.llm.errors import LLMError, MissingAPIKeyError
+from robotops.logger import log_exception
 from robotops.rag import KnowledgeBaseRetriever, RagConfig, RagError
 
 EXIT_OK = 0
@@ -162,9 +163,11 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return EXIT_OK
     except RobotOpsError as error:
-        print(f"[执行失败] {_describe(error)}", file=sys.stderr)
+        log_exception(error, context="run_workflow")
+        print(f"[执行失败] {describe_error(error)}", file=sys.stderr)
         return EXIT_INPUT_ERROR
     except PermissionError as error:
+        log_exception(error, context="run_workflow")
         print(
             f"[执行失败] 文件被占用或无写入权限：{error}\n"
             f"提示：请先关闭正在打开该文件的 Excel 窗口后重试。",
@@ -231,9 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     return EXIT_OK
 
 
-def _describe(error: Exception) -> str:
-    describe = getattr(error, "describe", None)
-    return str(describe()) if callable(describe) else str(error)
+
 
 
 if __name__ == "__main__":

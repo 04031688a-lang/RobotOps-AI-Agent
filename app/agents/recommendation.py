@@ -16,7 +16,8 @@ from ..graph.prompts import (
     build_recommendation_prompt,
 )
 from ..graph.state import WorkflowState
-from .base import BaseAgent
+from .base import BaseAgent, normalize_text_list
+from .diagnosis import evidence_for_anomaly, program_facts
 
 #: 异常类型 -> 模板建议（离线或降级时使用）
 OFFLINE_ACTIONS: dict[str, dict[str, str]] = {
@@ -75,6 +76,8 @@ class RecommendationAgent(BaseAgent):
             retrieved_cases=state.get("retrieved_cases") or [],
             retrieval_note=str(retrieval.get("reason") or ""),
             thresholds=state.get("thresholds") or {},
+            trend_analysis=state.get("trend_analysis") or {},
+            project_comparison=state.get("project_comparison") or {},
         )
         payload, result = self.chat_json(RECOMMENDATION_SYSTEM_PROMPT, prompt)
 
@@ -84,7 +87,8 @@ class RecommendationAgent(BaseAgent):
             "prompt_version": PROMPT_VERSION,
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "summary": str(payload.get("summary") or "").strip(),
-            "items": _normalize_items(payload.get("recommendations")),
+            "items": _normalize_items(payload.get("recommendations"), state=state),
+            "evidence": program_facts(state),
             "usage": result.usage,
         }
         if not recommendations["items"]:
@@ -110,6 +114,8 @@ def build_offline_recommendations(state: WorkflowState, *, note: str) -> dict[st
                 **template,
                 "priority": "高" if anomaly_type in {"故障率偏高", "运行率偏低"} else "中",
                 "anomaly_type": anomaly_type,
+                "basis": "程序判定",
+                "evidence": evidence_for_anomaly(state, anomaly_type),
                 "reference_case": "无",
             }
         )
@@ -122,16 +128,21 @@ def build_offline_recommendations(state: WorkflowState, *, note: str) -> dict[st
         "note": note,
         "summary": "以下建议由程序按异常类型生成，未经过大模型分析；实施前建议先补齐缺失数据。",
         "items": items,
+        "evidence": program_facts(state),
         "usage": {},
     }
 
 
-def _normalize_items(value: Any) -> list[dict[str, Any]]:
+def _normalize_items(
+    value: Any, *, state: WorkflowState | None = None
+) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
+    fallback_evidence = program_facts(state)["program"][:2] if state is not None else []
     items: list[dict[str, Any]] = []
     for item in value[:6]:
         if isinstance(item, dict):
+            evidence = normalize_text_list(item.get("evidence"), limit=5)
             items.append(
                 {
                     "action": str(item.get("action") or "").strip(),
@@ -139,6 +150,9 @@ def _normalize_items(value: Any) -> list[dict[str, Any]]:
                     "target": str(item.get("target") or "").strip(),
                     "expected_effect": str(item.get("expected_effect") or "").strip(),
                     "verification": str(item.get("verification") or "").strip(),
+                    "basis": str(item.get("basis") or "当前数据").strip(),
+                    # 模型没给 evidence 时用程序事实兜底，保证建议可追溯
+                    "evidence": evidence or fallback_evidence,
                     "reference_case": str(item.get("reference_case") or "无").strip(),
                 }
             )
@@ -150,8 +164,13 @@ def _normalize_items(value: Any) -> list[dict[str, Any]]:
                     "target": "",
                     "expected_effect": "",
                     "verification": "",
+                    "basis": "当前数据",
+                    "evidence": fallback_evidence,
                     "reference_case": "无",
                 }
             )
     return [item for item in items if item["action"]]
+
+
+
 

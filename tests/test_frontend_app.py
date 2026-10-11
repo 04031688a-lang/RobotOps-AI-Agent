@@ -15,7 +15,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 from app.graph.state import REQUIRED_STATE_KEYS  # noqa: E402
-from robotops import config  # noqa: E402
 
 APP_PATH = str(Path(__file__).resolve().parents[1] / "frontend" / "app.py")
 

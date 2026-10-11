@@ -47,6 +47,7 @@ class RagAgent(BaseAgent):
                 "retrieval": {
                     "enabled": False,
                     "reason": "本次运行使用 --no-rag，未检索历史案例",
+                    "message": "本次运行未启用知识库检索，分析结论仅依据当前运营数据。",
                     "cases": [],
                     "queries": [],
                 },
@@ -59,6 +60,7 @@ class RagAgent(BaseAgent):
                 "retrieval": {
                     "enabled": True,
                     "reason": "缺少 Phase 1 分析结果，未执行检索",
+                    "message": "缺少分析结果，未执行知识库检索，分析结论仅依据当前运营数据。",
                     "cases": [],
                     "queries": [],
                 },

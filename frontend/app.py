@@ -18,8 +18,14 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# 把项目根目录置于 sys.path 最前面（不是"不存在时才插入"）：
+# Streamlit 会把当前脚本所在目录（frontend/）放到 sys.path 前面，若不置顶，
+# 工作流里的 "import app.graph..." 会被 frontend/app.py 抢先解析，
+# 导致页面脚本被重复执行（表现为 key='view_switcher' 重复）。
+_PROJECT_ROOT_TEXT = str(PROJECT_ROOT)
+while _PROJECT_ROOT_TEXT in sys.path:
+    sys.path.remove(_PROJECT_ROOT_TEXT)
+sys.path.insert(0, _PROJECT_ROOT_TEXT)
 
 import streamlit as st
 

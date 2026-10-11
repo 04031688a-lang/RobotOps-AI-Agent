@@ -13,10 +13,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from .errors import IssueError, IssueNotFoundError, IssueStatusError
+from ..logger import log_event
+from .errors import IssueError, IssueStatusError
 from .models import (
     ANOMALY_METRIC_MAP,
     Issue,
@@ -123,6 +123,13 @@ class IssueService:
                 ],
             )
             created.append(self.store.create_issue(issue))
+            log_event(
+                "Issue created: %s (project=%s, priority=%s, type=%s)",
+                issue.issue_id,
+                issue.project,
+                issue.priority,
+                issue.anomaly_type,
+            )
 
         if not created:
             raise IssueError(
@@ -169,6 +176,14 @@ class IssueService:
             fields["closed_at"] = ""
 
         updated = self.store.update_fields(issue_id, **fields)
+        log_event(
+            "Issue status changed: %s %s -> %s",
+            issue_id,
+            issue.status,
+            target,
+        )
+        if target == IssueStatus.CLOSED.value:
+            log_event("Issue closed: %s", issue_id)
         detail = f"状态变更：{issue.status} → {target}"
         if note:
             detail += f"；说明：{note}"
@@ -266,6 +281,12 @@ class IssueService:
         if result.improved and auto_advance:
             fields["status"] = IssueStatus.COMPLETED.value
         self.store.update_fields(issue.issue_id, **fields)
+        log_event(
+            "Issue verification %s: %s (%s metrics compared)",
+            "passed" if result.improved else "failed",
+            issue.issue_id,
+            len(result.changes),
+        )
 
         lines = [result.statement]
         for change in result.changes:

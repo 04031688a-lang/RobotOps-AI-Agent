@@ -14,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .. import config as project_config
 from ..pipeline import AnalysisResult
 
 #: 异常类型 -> 检索补充词（补充同类案例中的常见表述，提升召回）

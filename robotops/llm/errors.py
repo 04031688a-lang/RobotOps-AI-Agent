@@ -28,15 +28,6 @@ class LLMError(RobotOpsError):
         self.status_code = status_code
         self.raw = raw
 
-    def describe(self) -> str:
-        """返回“错误信息 + 排查建议”的完整文本。"""
-
-        text = str(self)
-        if self.hint:
-            text = f"{text}\n排查建议：{self.hint}"
-        return text
-
-
 class MissingAPIKeyError(LLMError):
     """未配置 API Key。"""
 

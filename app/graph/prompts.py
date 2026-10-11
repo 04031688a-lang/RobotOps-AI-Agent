@@ -19,8 +19,18 @@ COMMON_RULES = """【通用规则（必须遵守）】
 4. 异常由程序按固定阈值判定（故障率 > 5%、满意度 < 85 分、运行率 < 80%、节降率 < 10%），
    你不得重新判断某个指标是否异常，也不得修改阈值。
 5. 数据不足以判断时必须明确写出「当前数据不足以判断」，并说明缺少哪些数据字段。
-6. 推测内容必须标注“推测”，不得使用「是因为」「证明」「必然」等确定性表述。
+6. 推测内容必须统一标注为「可能原因（推测）」，不得使用「是因为」「证明」「必然」等确定性表述，
+   也不得把可能原因写成已经确认的结论。
 7. 全文使用简体中文，语言简洁、可执行，面向运营管理者。
+8. 趋势、环比、同期变化、连续上升/下降等数值同样由程序计算完成，
+   只能原样引用，不得自行推算、外推或编造趋势。
+9. 不得虚构历史案例：只能引用输入中给出的案例（含 case_id 与来源文件），
+   不得编造案例编号、标题、相似度或案例内容。
+10. 不得把历史案例中的数据当成当前项目数据：案例均为模拟案例、仅供参考，
+    引用时必须写明案例编号，并说明该内容来自历史案例。
+11. 每条推测原因与优化建议都必须给出 evidence（引用的程序计算结果），
+    不得出现输入中不存在的数值。
+12. 建议必须与输入中的问题一一相关，不得给出与当前数据无关的泛泛建议。
 """
 
 DIAGNOSIS_SYSTEM_PROMPT = (
@@ -32,17 +42,27 @@ DIAGNOSIS_SYSTEM_PROMPT = (
 【输出格式】只输出一个 JSON 对象，不要输出任何解释文字或 Markdown 代码块：
 {
   "summary": "对异常成因的整体判断（2~3 句，说明这是推测）",
+  "findings": [
+    {
+      "finding": "结论（例如：B项目故障率异常）",
+      "basis": "依据来源：当前数据 / 程序判定 / 趋势 / 项目对比",
+      "evidence": ["引用的程序计算结果，例如：当前故障率 8.2%", "项目平均故障率 4.3%", "较上周期上升 72.3%"]
+    }
+  ],
   "possible_reasons": [
     {
-      "reason": "推测原因（必须带推测性质表述）",
+      "reason": "可能原因（推测）（必须带推测性质表述）",
       "confidence": "高/中/低",
+      "basis": "依据来源：当前数据 / 趋势 / 项目对比",
+      "evidence": ["支撑该推测的程序计算结果"],
       "based_on": "判断依据，必须引用输入中的数值或事实",
       "data_gap": "还缺少哪些数据字段；若依据充分写「无」"
     }
   ]
 }
-要求：possible_reasons 不超过 6 条，按可能性从高到低排序；
-每条都必须能对应到输入中的具体异常（不得解释输入里不存在的异常）。
+要求：findings 与 possible_reasons 均不超过 6 条，按可能性从高到低排序；
+每条都必须能对应到输入中的具体异常（不得解释输入里不存在的异常）；
+findings 的 evidence 必须逐条来自输入（数值、异常判定、趋势或对比结果），不得出现输入中不存在的数字。
 """
 )
 
@@ -68,11 +88,13 @@ RECOMMENDATION_SYSTEM_PROMPT = (
       "target": "对象/范围（项目、机器人或流程）",
       "expected_effect": "预期效果（不得给出输入中不存在的数据承诺）",
       "verification": "如何验证效果（需要采集什么指标）",
+      "evidence": ["支撑该建议的程序计算结果或趋势事实"],
       "reference_case": "参考的历史案例编号；无则写「无」"
     }
   ]
 }
-要求：recommendations 不超过 6 条，按优先级从高到低排序，并与当前异常一一对应。
+要求：recommendations 不超过 6 条，按优先级从高到低排序，并与当前异常一一对应；
+每条建议必须给出 evidence（引用输入中的指标、趋势或对比结果），不得出现输入中不存在的数值。
 """
 )
 
@@ -82,11 +104,14 @@ REPORT_SYSTEM_PROMPT = (
 """
     + COMMON_RULES
     + """
-【内容分区（必须严格区分，不得混写）】
-1. 当前项目事实：只能引用程序计算的指标与异常结果；
-2. 历史相似案例：引用时写明案例编号与标题，并说明这是模拟案例、仅供参考；
-3. 推测原因：来自诊断结果，必须保留“推测”字样与缺失数据说明；
-4. 优化建议：来自建议结果，需给出优先级与验证方式。
+【内容分区（必须严格区分，五类信息不得混写）】
+1. 当前项目数据事实：输入 meta / core_metrics / projects 中的客观数值（项目、机器人、运行时长等）；
+2. 程序计算结果：程序按阈值判定的异常、趋势与环比、项目横向对比（必须注明“由程序计算”）；
+3. RAG 历史案例：只能引用输入给出的案例，写明 case_id、相似度与来源文件，
+   并声明这是模拟案例、仅供参考，不得写成当前项目事实；
+4. AI 推测原因：必须写成「可能原因（推测）」，保留 evidence 与缺失数据说明，不得写成确定结论；
+5. AI 运营建议：来自建议结果，需给出优先级、evidence 与验证方式，并与问题一一对应。
+引用建议与原因时，必须把它们分别放在第 4 类与第 5 类，不得与第 1~3 类事实混写。
 
 【输出格式】直接输出 Markdown 文本（不要 JSON、不要代码块包裹），使用以下小节标题：
 # RobotOps AI 机器人运营分析报告（多 Agent 工作流）
@@ -96,16 +121,38 @@ REPORT_SYSTEM_PROMPT = (
 ## 四、可能原因（推测）
 ## 五、历史相似案例（仅供参考）
 ## 六、优化建议
-## 七、数据与口径说明
+## 七、运营趋势与项目对比（程序计算）
+## 八、数据与口径说明
 
 要求：
 - 「二、关键指标」用 Markdown 表格列出输入中的核心指标（数值与单位必须与输入一致）；
 - 「三、异常发现」按异常类型汇总，并注明这是程序按阈值判定；
 - 若没有异常，在「三、异常发现」写明未发现超过阈值的异常，并省略第四、五、六节的推测性内容（改为说明原因与建议不适用）；
 - 若没有检索到历史案例，在「五、历史相似案例」写明「未检索到足够相关的历史案例」；
-- 若某项输入缺失（例如诊断为降级结果），在该节写明「当前数据不足以判断」并说明原因。
+- 若某项输入缺失（例如诊断为降级结果），在该节写明「当前数据不足以判断」并说明原因；
+- 「七、运营趋势与项目对比」只能引用输入中程序计算好的趋势与对比数据（最新值、环比、方向、
+  连续上升/下降、项目排名），不得自行推算或外推；若输入未提供趋势数据，写明「本次运行未提供趋势数据」。
 """
 )
+
+
+def _phase9_sections(
+    trend_analysis: dict[str, Any] | None,
+    project_comparison: dict[str, Any] | None,
+) -> str:
+    """Phase 9：把程序算好的趋势与项目对比拼接成提示词段落。"""
+
+    parts: list[str] = []
+    if trend_analysis:
+        parts.append(
+            "【运营趋势（程序计算，禁止修改或外推）】\n" + _dump(trend_analysis) + "\n\n"
+        )
+    if project_comparison:
+        parts.append(
+            "【项目横向对比（程序计算，禁止修改或外推）】\n"
+            + _dump(project_comparison) + "\n\n"
+        )
+    return "".join(parts)
 
 
 def _dump(payload: Any) -> str:
@@ -122,6 +169,8 @@ def build_diagnosis_prompt(
     anomaly_summary: list[dict[str, Any]],
     abnormal_robots: list[dict[str, Any]],
     thresholds: dict[str, Any],
+    trend_analysis: dict[str, Any] | None = None,
+    project_comparison: dict[str, Any] | None = None,
 ) -> str:
     """构造诊断 Agent 的用户提示词（只给当前项目数据）。"""
 
@@ -140,7 +189,8 @@ def build_diagnosis_prompt(
         f"{_dump(abnormal_projects)}\n\n"
         "【异常机器人明细（前若干台）】\n"
         f"{_dump(abnormal_robots)}\n\n"
-        "请只返回 JSON：summary / possible_reasons。"
+        + _phase9_sections(trend_analysis, project_comparison)
+        + "请只返回 JSON：summary / possible_reasons。"
     )
 
 
@@ -152,6 +202,8 @@ def build_recommendation_prompt(
     retrieved_cases: list[dict[str, Any]],
     retrieval_note: str = "",
     thresholds: dict[str, Any] | None = None,
+    trend_analysis: dict[str, Any] | None = None,
+    project_comparison: dict[str, Any] | None = None,
 ) -> str:
     """构造建议 Agent 的用户提示词（当前数据 + 诊断 + 历史案例）。"""
 
@@ -173,7 +225,8 @@ def build_recommendation_prompt(
         f"{_dump(diagnosis)}\n\n"
         f"【历史相似案例】{case_note}\n"
         f"{_dump(retrieved_cases)}\n\n"
-        "请只返回 JSON：summary / recommendations。"
+        + _phase9_sections(trend_analysis, project_comparison)
+        + "请只返回 JSON：summary / recommendations。"
     )
 
 
@@ -188,6 +241,8 @@ def build_report_prompt(
     recommendations: dict[str, Any],
     thresholds: dict[str, Any],
     workflow_notes: list[str] | None = None,
+    trend_analysis: dict[str, Any] | None = None,
+    project_comparison: dict[str, Any] | None = None,
 ) -> str:
     """构造报告 Agent 的用户提示词（汇总全部工作流产出）。"""
 
@@ -213,6 +268,7 @@ def build_report_prompt(
         f"{_dump(recommendations)}\n\n"
         "【工作流执行说明】\n"
         f"{notes_text}\n\n"
-        "请按系统提示中的小节结构直接输出 Markdown 报告。"
+        + _phase9_sections(trend_analysis, project_comparison)
+        + "请按系统提示中的小节结构直接输出 Markdown 报告。"
     )
 

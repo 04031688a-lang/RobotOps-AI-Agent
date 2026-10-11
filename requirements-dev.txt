@@ -1,0 +1,6 @@
+# RobotOps AI —— 测试依赖（Phase 11）
+# 安装：python -m pip install -r requirements-dev.txt
+-r requirements.txt
+
+# 测试运行器（也可直接使用 python -m unittest，无需本文件）
+pytest>=8.0

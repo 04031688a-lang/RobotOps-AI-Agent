@@ -45,6 +45,8 @@ class WorkflowState(TypedDict, total=False):
     anomaly_summary: list[dict[str, Any]]
     abnormal_robots: list[dict[str, Any]]
     data_quality: dict[str, Any]
+    trend_analysis: dict[str, Any]
+    project_comparison: dict[str, Any]
     retrieval: dict[str, Any]
     analysis_result: Any  # Phase 1 的 AnalysisResult（进程内传递，不序列化）
     analysis_result_path: str
@@ -100,6 +102,8 @@ def create_initial_state(
         anomaly_summary=[],
         abnormal_robots=[],
         data_quality={},
+        trend_analysis={},
+        project_comparison={},
         retrieval={},
         has_anomalies=False,
         anomaly_count=0,

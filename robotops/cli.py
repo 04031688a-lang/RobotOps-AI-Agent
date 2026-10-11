@@ -17,7 +17,8 @@ from pathlib import Path
 from . import config
 from .console_io import setup_console_encoding
 from .data_loader import list_excel_sheets
-from .exceptions import RobotOpsError
+from .exceptions import RobotOpsError, describe_error
+from .logger import log_exception
 from .pipeline import run_analysis
 from .report import print_report
 
@@ -135,12 +136,15 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return 0
     except RobotOpsError as exc:
-        print(f"[分析失败] {exc}", file=sys.stderr)
+        log_exception(exc, context="cli")
+        print(f"[分析失败] {describe_error(exc)}", file=sys.stderr)
         return 2
     except FileNotFoundError as exc:
+        log_exception(exc, context="cli")
         print(f"[分析失败] 文件不存在：{exc}", file=sys.stderr)
         return 2
     except PermissionError as exc:
+        log_exception(exc, context="cli")
         print(
             f"[分析失败] 文件被占用或无写入权限：{exc}\n"
             f"提示：请先关闭正在打开该文件的 Excel 窗口后重试。",
